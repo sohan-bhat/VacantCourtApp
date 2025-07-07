@@ -8,6 +8,8 @@ import android.content.res.Configuration
 import android.graphics.*
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -87,7 +89,11 @@ class LiveDetectionActivity : ComponentActivity() {
     private val courtPendingFirebaseUpdate: MutableSet<String> = mutableSetOf()
 
     private var lastInferenceTimestamp: Long = 0L
-    private var INFERENCE_INTERVAL_MS = 3000L
+    private val INFERENCE_INTERVAL_MS = 5000L
+
+    private lateinit var heartbeatHandler: Handler
+    private lateinit var heartbeatRunnable: Runnable
+    private val HEARTBEAT_INTERVAL_MS = 15000L
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,7 +127,7 @@ class LiveDetectionActivity : ComponentActivity() {
         complexId = intent.getStringExtra("COMPLEX_ID")
         val complexName = intent.getStringExtra("COMPLEX_NAME")
 
-        textViewComplexNameTitleLive.text = complexName ?: getString(R.string.configure_courts_activity_title)
+        textViewComplexNameTitleLive.text = complexName ?: getString(R.string.select_tennis_complex_title)
 
 
         if (complexId == null) {
@@ -131,6 +137,7 @@ class LiveDetectionActivity : ComponentActivity() {
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+        setupHeartbeat()
 
         if (allPermissionsGranted()) {
             loadCourtConfigurationAndStart()
@@ -140,6 +147,32 @@ class LiveDetectionActivity : ComponentActivity() {
             )
         }
     }
+
+    private fun setupHeartbeat() {
+        heartbeatHandler = Handler(Looper.getMainLooper())
+        heartbeatRunnable = object : Runnable {
+            override fun run() {
+                updateComplexHeartbeat()
+                heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun updateComplexHeartbeat() {
+        if (complexId == null) {
+            return
+        }
+        Log.d(TAG, "Sending heartbeat update for complex ID: $complexId")
+        db.collection(TENNIS_COMPLEXES_COLLECTION_LIVE).document(complexId!!)
+            .update("lastUpdatedStatus", System.currentTimeMillis())
+            .addOnSuccessListener {
+                Log.d(TAG, "Heartbeat update successful.")
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG, "Heartbeat update failed.", e)
+            }
+    }
+
 
     private fun applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
@@ -157,7 +190,7 @@ class LiveDetectionActivity : ComponentActivity() {
                     if (document.exists()) {
                         val complex = document.toObject(TennisComplexData::class.java)
                         complex?.let { loadedComplex ->
-                            if (textViewComplexNameTitleLive.text == getString(R.string.configure_courts_activity_title) && loadedComplex.name.isNotEmpty()) {
+                            if (textViewComplexNameTitleLive.text == getString(R.string.select_tennis_complex_title) && loadedComplex.name.isNotEmpty()) {
                                 textViewComplexNameTitleLive.text = loadedComplex.name
                             }
                             courtStatusMap.clear()
@@ -179,7 +212,7 @@ class LiveDetectionActivity : ComponentActivity() {
                             Log.d(TAG, "Loaded ${normalizedCourtPolygons.size} configured regions. Initial statuses: $courtStatusMap")
                             setupYoloInterpreter()
                             startCameraWhenReady()
-                            lastInferenceTimestamp = 0L // Reset for immediate first inference
+                            lastInferenceTimestamp = 0L
 
                         } ?: run {
                             showErrorAndFinish(getString(R.string.error_parsing_complex_data_live))
@@ -787,6 +820,18 @@ class LiveDetectionActivity : ComponentActivity() {
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (allPermissionsGranted()) {
+            heartbeatHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
     }
 
     @Deprecated("Deprecated in Java")
