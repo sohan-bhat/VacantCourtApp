@@ -8,8 +8,6 @@ import android.content.res.Configuration
 import android.graphics.*
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -91,9 +89,8 @@ class LiveDetectionActivity : ComponentActivity() {
     private var lastInferenceTimestamp: Long = 0L
     private val INFERENCE_INTERVAL_MS = 5000L
 
-    private lateinit var heartbeatHandler: Handler
-    private lateinit var heartbeatRunnable: Runnable
-    private val HEARTBEAT_INTERVAL_MS = 15000L
+    private var lastHeartbeatTimestamp: Long = 0L
+    private val HEARTBEAT_INTERVAL_MS = 15000L // 15 seconds
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,7 +124,7 @@ class LiveDetectionActivity : ComponentActivity() {
         complexId = intent.getStringExtra("COMPLEX_ID")
         val complexName = intent.getStringExtra("COMPLEX_NAME")
 
-        textViewComplexNameTitleLive.text = complexName ?: getString(R.string.select_tennis_complex_title)
+        textViewComplexNameTitleLive.text = complexName ?: getString(R.string.configure_courts_activity_title)
 
 
         if (complexId == null) {
@@ -137,7 +134,6 @@ class LiveDetectionActivity : ComponentActivity() {
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
-        setupHeartbeat()
 
         if (allPermissionsGranted()) {
             loadCourtConfigurationAndStart()
@@ -147,32 +143,6 @@ class LiveDetectionActivity : ComponentActivity() {
             )
         }
     }
-
-    private fun setupHeartbeat() {
-        heartbeatHandler = Handler(Looper.getMainLooper())
-        heartbeatRunnable = object : Runnable {
-            override fun run() {
-                updateComplexHeartbeat()
-                heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
-            }
-        }
-    }
-
-    private fun updateComplexHeartbeat() {
-        if (complexId == null) {
-            return
-        }
-        Log.d(TAG, "Sending heartbeat update for complex ID: $complexId")
-        db.collection(TENNIS_COMPLEXES_COLLECTION_LIVE).document(complexId!!)
-            .update("lastUpdatedStatus", System.currentTimeMillis())
-            .addOnSuccessListener {
-                Log.d(TAG, "Heartbeat update successful.")
-            }
-            .addOnFailureListener { e ->
-                Log.w(TAG, "Heartbeat update failed.", e)
-            }
-    }
-
 
     private fun applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
@@ -190,7 +160,7 @@ class LiveDetectionActivity : ComponentActivity() {
                     if (document.exists()) {
                         val complex = document.toObject(TennisComplexData::class.java)
                         complex?.let { loadedComplex ->
-                            if (textViewComplexNameTitleLive.text == getString(R.string.select_tennis_complex_title) && loadedComplex.name.isNotEmpty()) {
+                            if (textViewComplexNameTitleLive.text == getString(R.string.configure_courts_activity_title) && loadedComplex.name.isNotEmpty()) {
                                 textViewComplexNameTitleLive.text = loadedComplex.name
                             }
                             courtStatusMap.clear()
@@ -213,6 +183,7 @@ class LiveDetectionActivity : ComponentActivity() {
                             setupYoloInterpreter()
                             startCameraWhenReady()
                             lastInferenceTimestamp = 0L
+                            lastHeartbeatTimestamp = 0L
 
                         } ?: run {
                             showErrorAndFinish(getString(R.string.error_parsing_complex_data_live))
@@ -361,7 +332,7 @@ class LiveDetectionActivity : ComponentActivity() {
             }
         } catch (exc: Exception) {
             Log.e(TAG, "Use case binding failed", exc)
-            if (processingEnabled && !isDestroyed && !isFinishing) {
+            if (processingEnabled && !isFinishing && !isDestroyed) {
                 Toast.makeText(this, "Use case binding failed: ${exc.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
         }
@@ -379,6 +350,12 @@ class LiveDetectionActivity : ComponentActivity() {
     private inner class YoloImageAnalyzer : ImageAnalysis.Analyzer {
         override fun analyze(imageProxy: ImageProxy) {
             val currentTime = System.currentTimeMillis()
+
+            if(currentTime - lastHeartbeatTimestamp > HEARTBEAT_INTERVAL_MS) {
+                updateComplexHeartbeat()
+                lastHeartbeatTimestamp = currentTime
+            }
+
             if (currentTime - lastInferenceTimestamp < INFERENCE_INTERVAL_MS) {
                 imageProxy.close()
                 return
@@ -459,6 +436,17 @@ class LiveDetectionActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun updateComplexHeartbeat() {
+        val complexDocRef = complexId?.let { db.collection(TENNIS_COMPLEXES_COLLECTION_LIVE).document(it) }
+            ?: return
+
+        val updateData = mapOf("lastUpdatedStatus" to System.currentTimeMillis())
+        complexDocRef.update(updateData)
+            .addOnSuccessListener { Log.d(TAG, "Complex heartbeat updated successfully.") }
+            .addOnFailureListener { e -> Log.w(TAG, "Error updating complex heartbeat", e) }
+    }
+
 
     private fun isPointInPolygon(point: PointF, polygon: List<PointF>): Boolean {
         if (polygon.size < 3) return false
@@ -820,18 +808,6 @@ class LiveDetectionActivity : ComponentActivity() {
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (allPermissionsGranted()) {
-            heartbeatHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        heartbeatHandler.removeCallbacks(heartbeatRunnable)
     }
 
     @Deprecated("Deprecated in Java")

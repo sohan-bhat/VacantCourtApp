@@ -1,13 +1,16 @@
 package com.example.vacantcourt.screens
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import androidx.appcompat.widget.Toolbar
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -26,11 +29,15 @@ class CourtSelectionActivity : AppCompatActivity() {
     private lateinit var textViewEmptyList: TextView
     private lateinit var toolbar: Toolbar
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
+    private lateinit var searchView: SearchView
 
     private val db = Firebase.firestore
     private val TAG = "CourtSelectionActivity"
     private val TENNIS_COMPLEXES_COLLECTION = "Courts"
 
+    private var fullComplexList: List<TennisComplexData> = emptyList()
+
+    @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_court_selection)
@@ -42,8 +49,8 @@ class CourtSelectionActivity : AppCompatActivity() {
         textViewEmptyList = findViewById(R.id.textViewEmptyList)
         recyclerView = findViewById(R.id.recyclerViewTennisComplexes)
         recyclerView.layoutManager = LinearLayoutManager(this)
-
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
+        searchView = findViewById(R.id.searchViewComplexes)
 
         adapter = TennisComplexAdapter(
             emptyList(),
@@ -71,8 +78,11 @@ class CourtSelectionActivity : AppCompatActivity() {
         )
         recyclerView.adapter = adapter
 
+        textViewEmptyList.setTextColor(getColor(R.color.white))
+
         swipeRefreshLayout.setOnRefreshListener {
             Log.d(TAG, "Swipe to refresh triggered.")
+            searchView.setQuery("", false)
             fetchTennisComplexes()
         }
 
@@ -82,12 +92,53 @@ class CourtSelectionActivity : AppCompatActivity() {
             android.R.color.holo_orange_light,
             android.R.color.holo_red_light
         )
+
+        setupSearchView()
     }
 
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "onResume: Fetching tennis complexes.")
         fetchTennisComplexes()
+    }
+
+    private fun setupSearchView() {
+        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                searchView.clearFocus()
+                return true
+            }
+
+            override fun onQueryTextChange(newText: String?): Boolean {
+                filterList(newText)
+                return true
+            }
+        })
+    }
+
+    private fun filterList(query: String?) {
+        val filteredList = if (query.isNullOrBlank()) {
+            fullComplexList
+        } else {
+            fullComplexList.filter {
+                it.name.contains(query, ignoreCase = true)
+            }
+        }
+
+        adapter.updateData(filteredList)
+
+        if (filteredList.isEmpty()) {
+            recyclerView.visibility = View.GONE
+            textViewEmptyList.visibility = View.VISIBLE
+            if (fullComplexList.isEmpty()) {
+                textViewEmptyList.text = getString(R.string.no_tennis_complexes_found)
+            } else {
+                textViewEmptyList.text = getString(R.string.no_search_results_found)
+            }
+        } else {
+            recyclerView.visibility = View.VISIBLE
+            textViewEmptyList.visibility = View.GONE
+        }
     }
 
     private fun fetchTennisComplexes() {
@@ -115,16 +166,9 @@ class CourtSelectionActivity : AppCompatActivity() {
                     }
                 }
 
-                if (complexList.isEmpty()) {
-                    textViewEmptyList.text = getString(R.string.no_tennis_complexes_found)
-                    textViewEmptyList.visibility = View.VISIBLE
-                    recyclerView.visibility = View.GONE
-                } else {
-                    textViewEmptyList.visibility = View.GONE
-                    recyclerView.visibility = View.VISIBLE
-                }
-                adapter.updateData(complexList)
-                Log.d(TAG, "Fetched ${complexList.size} tennis complexes.")
+                fullComplexList = complexList.sortedBy { it.name }
+                filterList(searchView.query.toString())
+                Log.d(TAG, "Fetched ${fullComplexList.size} tennis complexes.")
             }
             .addOnFailureListener { exception ->
                 progressBar.visibility = View.GONE

@@ -23,4 +23,5 @@
     <string name="view_complex_live_feed">View complex live feed</string>
     <string name="edit_court_configuration">Edit court configuration</string>
     <string name="all_courts_configured_edit_mode">All courts configured. Click to edit.</string>
+    <string name="no_search_results_found">No complexes found matching your search.</string>
 </resources>
