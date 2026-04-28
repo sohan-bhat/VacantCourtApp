@@ -30,7 +30,7 @@ End-to-end latency from movement on court to web app update is ~2 seconds.
 ## Companion repo
 
 - Web frontend: [VacantCourt](https://github.com/sohan-bhat/VacantCourt)
-- Live demo: https://vacantcourt.netlify.app
+- Live demo: https://vacantcourt.com
 
 ## License
 
