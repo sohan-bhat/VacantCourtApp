@@ -6,10 +6,10 @@ This app runs on a phone camera mounted at a court. It uses TensorFlow Lite to d
 
 ## How it works
 
-1. **Capture** — CameraX feeds frames from the device camera.
-2. **Detect** — A TensorFlow Lite person-detection model runs on each frame and returns bounding boxes.
-3. **Map to courts** — Each court is defined as a rectangle in the frame. The app checks whether any detection box overlaps a court zone.
-4. **Sync** — When a court's occupancy state changes, the new status (`available` / `in-use`) is written to Firestore. The web app picks it up in near real time.
+1. **Capture:** CameraX feeds frames from the device camera.
+2. **Detect:** A TensorFlow Lite person-detection model runs on each frame and returns bounding boxes.
+3. **Map to courts:** Each court is defined as a rectangle in the frame. The app checks whether any detection box overlaps a court zone.
+4. **Sync:** When a court's occupancy state changes, the new status (`available` / `in-use`) is written to Firestore. The web app picks it up in near real time.
 
 End-to-end latency from movement on court to web app update is ~2 seconds.
 
