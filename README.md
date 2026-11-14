@@ -32,6 +32,8 @@ End-to-end latency from movement on court to web app update is ~2 seconds.
 - Web frontend: [VacantCourt](https://github.com/sohan-bhat/VacantCourt)
 - Live demo: https://vacantcourt.com
 
+Built by [Sohan Bhat](https://sohanbhat.me/).
+
 ## License
 
 MIT
